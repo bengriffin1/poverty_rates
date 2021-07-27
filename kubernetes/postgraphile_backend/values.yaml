@@ -1,0 +1,19 @@
+global:
+  environment: "local"
+
+deployment:
+  name: "default"
+  replicas: 1
+  servicePort: 5000
+  postgresSchema: "graphql"
+
+postgresql:
+  enabled: true
+  postgresqlUsername: postgres
+  postgresqlPassword: postgres
+  service:
+    port: 5432
+  resources:
+      requests:
+        memory: "2048Mi"
+        cpu: "1000m"

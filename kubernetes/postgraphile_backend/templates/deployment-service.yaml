@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.app }}-service
+  annotations:
+    alb.ingress.kubernetes.io/healthcheck-path: /healthcheck
+  labels:
+    app: {{ .Values.app }}
+spec:
+  {{- if ne .Values.global.environment "local" }}
+  type: NodePort
+  {{- else }}
+  type: LoadBalancer
+  {{- end }}
+  ports:
+  - port: {{ .Values.deployment.servicePort }}
+    targetPort: backend-tcp
+  selector:
+    app: {{ .Values.app }}
+    component: {{ .Values.app }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.app }}
+  labels:
+    app: {{ .Values.app }}
+    component: {{ .Values.app }}
+  annotations:
+    timestamp: {{ now | quote }}
+spec:
+  replicas: {{ .Values.deployment.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.app }}
+      component: {{ .Values.app }}
+  strategy:
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app }}
+        component: {{ .Values.app }}
+    spec:
+      initContainers:
+      - name: {{ .Values.app }}-flyway
+        {{- if eq .Values.global.environment "development" }}
+        image: poverty-rates-backend-flyway:{{ .Values.deployment.version }}
+        imagePullPolicy: IfNotPresent
+        {{- else }}
+        image: 12346.dkr.ecr.us-east-1.amazonaws.com/{{ .Values.global.environment }}:app-{{ .Values.deployment.name }}-flyway
+        imagePullPolicy: Always
+        {{- end }}
+        env:
+          - name: POSTGRES_HOST
+            value: "{{ .Values.app }}-postgresql.{{ .Values.namespace }}.svc.cluster.local"
+          - name: POSTGRES_USER
+            value: {{ .Values.postgresql.postgresqlUsername }}
+          - name: POSTGRES_PW
+            value: {{ .Values.postgresql.postgresqlPassword }}
+          - name: POSTGRES_PORT
+            value: "{{ .Values.postgresql.service.port }}"
+          - name: POSTGRES_DB
+            value: {{ .Values.postgresql.postgresqlDatabase }}
+          - name: FLYWAY_EDITION
+            value: "community"
+        args: ["-url=jdbc:postgresql://$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)", "-user=$(POSTGRES_USER)", "-password=$(POSTGRES_PW)", "-connectRetries=100", "migrate"]
+      containers:
+      - name: {{ .Values.app }}
+        image: graphile/postgraphile:v4.11.0
+        imagePullPolicy: IfNotPresent
+        env:
+          - name: POSTGRES_HOST
+            value: "{{ .Values.app }}-postgresql.{{ .Values.namespace }}.svc.cluster.local"
+          - name: POSTGRES_USER
+            value: {{ .Values.postgresql.postgresqlUsername }}
+          - name: POSTGRES_PW
+            value: {{ .Values.postgresql.postgresqlPassword }}
+          - name: POSTGRES_PORT
+            value: "{{ .Values.postgresql.service.port }}"
+          - name: POSTGRES_DB
+            value: {{ .Values.postgresql.postgresqlDatabase }}
+          - name: POSTGRES_SCHEMA
+            value: {{ .Values.deployment.postgresSchema }}
+        ports:
+        - containerPort: {{ .Values.deployment.servicePort }}
+          name: backend-tcp
+        args: ["--connection", "postgres://$(POSTGRES_USER):$(POSTGRES_PW)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)", "--schema", "$(POSTGRES_SCHEMA)", "--watch", "--retry-on-init-fail", "--enhance-graphiql"]
