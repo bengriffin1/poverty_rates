@@ -1,4 +1,4 @@
-# Entera Homework - Poverty Rates
+# Poverty Rates
 This repo contains code to retrieve, transform, and load data from the US Census poverty data.
 
 ## Project Structure
